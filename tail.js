@@ -53,7 +53,7 @@ async function run () {
               return a1.localeCompare(b2)
             })
             const max = 40
-            if (sortedKeyCounts.length > max) sortedKeyCounts = max
+            if (sortedKeyCounts.length > max) sortedKeyCounts.length = max
             const draftDisplay = produce(lastDisplay, draftState => {
               draftState.length = 0
               sortedKeyCounts.forEach(val => draftState.push(val))
