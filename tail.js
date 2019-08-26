@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const http = require('http')
-const produce = require('immer')
+const { produce } = require('immer')
 
 // curl "http://localhost:5001/api/v0/log/tail"
 
@@ -27,6 +27,7 @@ async function run () {
     console.log(`STATUS: ${res.statusCode}`);
     console.log(`HEADERS: ${JSON.stringify(res.headers)}`);
     res.setEncoding('utf8');
+    let lastDisplay = []
     res.on('data', (chunk) => {
       try {
         const event = JSON.parse(chunk)
@@ -39,12 +40,36 @@ async function run () {
             if (!draftState[event.message.key]) {
               draftState[event.message.key] = {}
             }
-            draftState[event.message.key][event.peerId] = 1
+            draftState[event.message.key][event.peerID] = 1
           })
-          if (draft !== cidDhtLookups) console.log('Update', draft)
+          if (draft !== cidDhtLookups) {
+            const keyCounts = []
+            for (const key of Object.keys(draft)) {
+              keyCounts.push([key, Object.keys(draft[key]).length])
+            }
+            let sortedKeyCounts = keyCounts.sort(([a1, a2], [b1, b2]) => {
+              const cmp = b2 - a2
+              if (cmp !== 0) return cmp
+              return a1.localeCompare(b2)
+            })
+            const max = 40
+            if (sortedKeyCounts.length > max) sortedKeyCounts = max
+            const draftDisplay = produce(lastDisplay, draftState => {
+              draftState.length = 0
+              sortedKeyCounts.forEach(val => draftState.push(val))
+            })
+            if (draftDisplay !== lastDisplay) {
+              for (const [key, count] of draftDisplay) {
+                console.log(key, count)
+              }
+              console.log('')
+            }
+            lastDisplay = draftDisplay
+          }
           cidDhtLookups = draft
         }
       } catch (e) {
+        console.error('Err', e)
         // Ignore
       }
       // console.log(`BODY: ${chunk}`);
