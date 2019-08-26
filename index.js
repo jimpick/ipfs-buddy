@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+const path = require('path')
+const { homedir } = require('os')
 const { promisify } = require('util')
 const PeerId = require('peer-id')
 const PeerBase = require('peer-base')
@@ -18,7 +20,11 @@ function getDhtId (peerId) {
 }
 
 async function run () {
-  const app = PeerBase('ipfs-buddy')
+  const app = PeerBase('ipfs-buddy', {
+    ipfs: {
+      repo: path.join(homedir(), '.ipfs-buddy', epoch)
+    }
+  })
   console.log('Starting...')
   const ipfs = ipfsClient()
   const buddyIdentity = await ipfs.id()
