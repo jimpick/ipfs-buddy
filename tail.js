@@ -66,7 +66,7 @@ async function run () {
 
   let lastDisplay = []
 
-  function render (sortedKeyCounts) {
+  async function render (sortedKeyCounts) {
     const draftDisplay = produce(lastDisplay, draftState => {
       draftState.length = 0
       sortedKeyCounts.forEach(val => draftState.push(val))
@@ -74,7 +74,7 @@ async function run () {
     if (draftDisplay !== lastDisplay) {
       for (const [key, count] of draftDisplay) {
         console.log(key, count)
-        ipldKeyCounts.set(key, count)
+        await ipldKeyCounts.set(key, count)
       }
       const ipldKeyCountsCid = ipldKeyCounts.cid.toString()
       console.log('ipldKeyCounts CID:', ipldKeyCountsCid)
@@ -84,7 +84,7 @@ async function run () {
     lastDisplay = draftDisplay
   }
 
-  bus.on('render', throttle(render, 5000))
+  bus.on('render', throttle(render, 2000))
 
   const req = http.request(options, (res) => {
     console.log(`STATUS: ${res.statusCode}`);
