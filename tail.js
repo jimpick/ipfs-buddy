@@ -4,23 +4,29 @@ const http = require('http')
 const { produce } = require('immer')
 const multihash = require('multihashes')
 const HashMap = require('@ipld/hashmap')
+const ipfsClient = require('ipfs-http-client')
+const IPFS = require('ipfs')
+const nanobus = require('nanobus')
+const throttle = require('lodash.throttle')
 
 // curl "http://localhost:5001/api/v0/log/tail"
 
-const ipfsClient = require('ipfs-http-client')
 
 let cidDhtLookups = {}
 
 async function run () {
   console.log('Starting...')
+  const bus = nanobus()
   const ipfs = ipfsClient()
   const buddyIdentity = await ipfs.id()
   const buddyId = buddyIdentity.id
   console.log('Id:', buddyId)
 
+  const jsIpfs = await IPFS.create()
+
   const loader = {
     get: async function (cid) {
-      const result = await ipfs.block.get(cid)
+      const result = await jsIpfs.block.get(cid)
       return result.value
     },
     put: async function (cid, block) {
@@ -28,9 +34,10 @@ async function run () {
       console.log('Jim put', cid.toString(), cid, cid.multibaseName,
                   multihash.decode(cid.multihash))
                   */
-      const result = await ipfs.block.put(block, { cid })
+      const result = await jsIpfs.block.put(block, { cid })
       /*
-      console.log('Jim put2', result.cid.toString(), result.cid, result.cid.multibaseName,
+      console.log('Jim put2', result.cid.toString(), result.cid,
+                  result.cid.multibaseName,
                   multihash.decode(result.cid.multihash))
                   */
     }
@@ -46,11 +53,30 @@ async function run () {
     method: 'GET'
   }
 
+  let lastDisplay = []
+
+  function render (sortedKeyCounts) {
+    const draftDisplay = produce(lastDisplay, draftState => {
+      draftState.length = 0
+      sortedKeyCounts.forEach(val => draftState.push(val))
+    })
+    if (draftDisplay !== lastDisplay) {
+      for (const [key, count] of draftDisplay) {
+        console.log(key, count)
+        ipldKeyCounts.set(key, count)
+      }
+      console.log('ipldKeyCounts CID:', ipldKeyCounts.cid.toString())
+      console.log('')
+    }
+    lastDisplay = draftDisplay
+  }
+
+  bus.on('render', throttle(render, 5000))
+
   const req = http.request(options, (res) => {
     console.log(`STATUS: ${res.statusCode}`);
     console.log(`HEADERS: ${JSON.stringify(res.headers)}`);
     res.setEncoding('utf8');
-    let lastDisplay = []
     res.on('data', (chunk) => {
       try {
         const event = JSON.parse(chunk)
@@ -77,19 +103,7 @@ async function run () {
             })
             const max = 40
             if (sortedKeyCounts.length > max) sortedKeyCounts.length = max
-            const draftDisplay = produce(lastDisplay, draftState => {
-              draftState.length = 0
-              sortedKeyCounts.forEach(val => draftState.push(val))
-            })
-            if (draftDisplay !== lastDisplay) {
-              for (const [key, count] of draftDisplay) {
-                console.log(key, count)
-                ipldKeyCounts.set(key, count)
-              }
-              console.log('ipldKeyCounts CID:', ipldKeyCounts.cid.toString())
-              console.log('')
-            }
-            lastDisplay = draftDisplay
+            bus.emit('render', sortedKeyCounts)
           }
           cidDhtLookups = draft
         }

@@ -17,9 +17,12 @@
     "flat-tree": "^1.6.0",
     "iamap": "^0.6.0",
     "immer": "^3.2.0",
+    "ipfs": "^0.37.1",
     "ipfs-http-client": "^33.1.1",
     "libp2p-kad-dht": "^0.16.0",
+    "lodash.throttle": "^4.1.1",
     "multihashes": "^0.4.15",
+    "nanobus": "^4.4.0",
     "peer-base": "peer-base/peer-base#temp-fix/delta-crdts-mvreg-fix",
     "peer-id": "^0.13.2"
   }
