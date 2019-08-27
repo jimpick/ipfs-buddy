@@ -29,6 +29,9 @@ async function run () {
           '/dns4/rendezvous.jimpick.com/tcp/9093/wss/p2p-websocket-star'
         ]
       }
+    },
+    EXPERIMENTAL: {
+      pubsub: true
     }
   })
 
@@ -73,7 +76,9 @@ async function run () {
         console.log(key, count)
         ipldKeyCounts.set(key, count)
       }
-      console.log('ipldKeyCounts CID:', ipldKeyCounts.cid.toString())
+      const ipldKeyCountsCid = ipldKeyCounts.cid.toString()
+      console.log('ipldKeyCounts CID:', ipldKeyCountsCid)
+      jsIpfs.pubsub.publish('ipfs-buddy-tail', Buffer.from(ipldKeyCountsCid))
       console.log('')
     }
     lastDisplay = draftDisplay
