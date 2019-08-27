@@ -22,7 +22,15 @@ async function run () {
   const buddyId = buddyIdentity.id
   console.log('Id:', buddyId)
 
-  const jsIpfs = await IPFS.create()
+  const jsIpfs = await IPFS.create({
+    config: {
+      Addresses: {
+        Swarm: [
+          '/dns4/rendezvous.jimpick.com/tcp/9093/wss/p2p-websocket-star'
+        ]
+      }
+    }
+  })
 
   const loader = {
     get: async function (cid) {
