@@ -2,6 +2,8 @@
 
 const http = require('http')
 const { produce } = require('immer')
+const multihash = require('multihashes')
+const HashMap = require('@ipld/hashmap')
 
 // curl "http://localhost:5001/api/v0/log/tail"
 
@@ -15,6 +17,27 @@ async function run () {
   const buddyIdentity = await ipfs.id()
   const buddyId = buddyIdentity.id
   console.log('Id:', buddyId)
+
+  const loader = {
+    get: async function (cid) {
+      const result = await ipfs.block.get(cid)
+      return result.value
+    },
+    put: async function (cid, block) {
+      /*
+      console.log('Jim put', cid.toString(), cid, cid.multibaseName,
+                  multihash.decode(cid.multihash))
+                  */
+      const result = await ipfs.block.put(block, { cid })
+      /*
+      console.log('Jim put2', result.cid.toString(), result.cid, result.cid.multibaseName,
+                  multihash.decode(result.cid.multihash))
+                  */
+    }
+  }
+
+  let ipldKeyCounts = await HashMap.create(loader)
+  console.log('ipldKeyCounts CID:', ipldKeyCounts.cid.toString())
 
   const options = {
     hostname: 'localhost',
@@ -61,7 +84,9 @@ async function run () {
             if (draftDisplay !== lastDisplay) {
               for (const [key, count] of draftDisplay) {
                 console.log(key, count)
+                ipldKeyCounts.set(key, count)
               }
+              console.log('ipldKeyCounts CID:', ipldKeyCounts.cid.toString())
               console.log('')
             }
             lastDisplay = draftDisplay
