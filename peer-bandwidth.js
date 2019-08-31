@@ -52,9 +52,24 @@ async function run () {
         if (timeSort !== 0) return timeSort
         return line1.localeCompare(line2)
       }
-    ).map(([line, time]) => time + '|' + line)
+    ).map(([line, time]) => time + ' ' + line)
+    const bitswapLines = sortedLines.filter(line => line.match(/bitswap/))
+    const annotatedBitswapLines = []
+    for (const line of bitswapLines) {
+      annotatedBitswapLines.push(line)
+      const [_, peerId] = line.split(' ')
+      const stats = await ipfs.stats.bw({ peer: peerId })
+      // annotatedBitswapLines.push(`${peerId} ${JSON.stringify(stats)}`)
+      annotatedBitswapLines.push(
+        '  ' +
+        `In ${stats.totalIn} ` +
+        `Out ${stats.totalOut} ` +
+        `RateIn ${stats.rateIn.toFixed(2)} ` +
+        `RateOut ${stats.rateOut.toFixed(2)} `
+      )
+    }
     const prioritizedLines =
-      sortedLines.filter(line => line.match(/bitswap/))
+      annotatedBitswapLines
       .concat([''])
       .concat(
         sortedLines.filter(line => !line.match(/bitswap/))
