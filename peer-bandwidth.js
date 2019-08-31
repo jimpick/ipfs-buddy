@@ -55,24 +55,30 @@ async function run () {
     ).map(([line, time]) => time + ' ' + line)
     const bitswapLines = sortedLines.filter(line => line.match(/bitswap/))
     const annotatedBitswapLines = []
+    const live = {}
     for (const line of bitswapLines) {
-      annotatedBitswapLines.push(line)
       const [_, peerId] = line.split(' ')
       const stats = await ipfs.stats.bw({ peer: peerId })
       // annotatedBitswapLines.push(`${peerId} ${JSON.stringify(stats)}`)
-      annotatedBitswapLines.push(
-        '  ' +
-        `In ${stats.totalIn} ` +
-        `Out ${stats.totalOut} ` +
-        `RateIn ${stats.rateIn.toFixed(2)} ` +
-        `RateOut ${stats.rateOut.toFixed(2)} `
-      )
+      const rateIn = stats.rateIn.toFixed(2)
+      const rateOut = stats.rateOut.toFixed(2)
+      if (rateIn !== '0.00' || rateOut !== '0.00') {
+        live[line] = 1
+        annotatedBitswapLines.push(line)
+        annotatedBitswapLines.push(
+          '  ' +
+          `In ${stats.totalIn} ` +
+          `Out ${stats.totalOut} ` +
+          `RateIn ${stats.rateIn.toFixed(2)} ` +
+          `RateOut ${stats.rateOut.toFixed(2)} `
+        )
+      }
     }
     const prioritizedLines =
       annotatedBitswapLines
       .concat([''])
       .concat(
-        sortedLines.filter(line => !line.match(/bitswap/))
+        sortedLines.filter(line => !line.match(/bitswap/) || !live[line])
       )
 
     console.log('\u001b[2J\u001b[0;0H')
