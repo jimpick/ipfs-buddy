@@ -53,10 +53,16 @@ async function run () {
         return line1.localeCompare(line2)
       }
     ).map(([line, time]) => time + '|' + line)
+    const prioritizedLines =
+      sortedLines.filter(line => line.match(/bitswap/))
+      .concat([''])
+      .concat(
+        sortedLines.filter(line => !line.match(/bitswap/))
+      )
 
     console.log('\u001b[2J\u001b[0;0H')
-    sortedLines.length = process.stdout.rows - 3
-    console.log(sortedLines.join('\n'))
+    prioritizedLines.length = process.stdout.rows - 3
+    console.log(prioritizedLines.join('\n'))
     await delay(1000)
   }
 }
