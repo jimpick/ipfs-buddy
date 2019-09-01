@@ -4,7 +4,7 @@ const { produce } = require('immer')
 const multihash = require('multihashes')
 const ipfsClient = require('ipfs-http-client')
 const nanobus = require('nanobus')
-const throttle = require('lodash.throttle')
+// const throttle = require('lodash.throttle')
 const speedometer = require('speedometer')
 
 const speedometers = {}
@@ -22,7 +22,7 @@ async function run () {
     const lines = []
     const now = Date.now()
     for (const key of Object.keys(speedometers)) {
-      if (speedometers[key].last + 30000 < now) {
+      if (speedometers[key].last + 20000 < now) {
         delete speedometers[key]
       } else {
         lines.push(
@@ -36,7 +36,11 @@ async function run () {
     console.log(lines.join('\n'))
   }
 
-  bus.on('render', throttle(render, 2000))
+  // const throttledRender = throttle(render, 1000)
+
+  setInterval(render, 1000)
+
+  // bus.on('render', throttledRender)
 
   const options = {
     hostname: 'localhost',
@@ -58,15 +62,15 @@ async function run () {
           // console.log(evt, peer, proto, size)
           if (!speedometers[peer]) {
             speedometers[peer] = {
-              inMeter: speedometer(20),
-              outMeter: speedometer(20),
+              inMeter: speedometer(),
+              outMeter: speedometer(),
               created: Date.now()
             }
           }
           if (evt === 'in')  speedometers[peer].inMeter(size)
           if (evt === 'out')  speedometers[peer].outMeter(size)
           speedometers[peer].last = Date.now()
-          bus.emit('render')
+          // bus.emit('render')
         }
       } catch (e) {
         // console.error('Err', e.message)
