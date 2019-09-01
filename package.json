@@ -26,6 +26,7 @@
     "multihashes": "^0.4.15",
     "nanobus": "^4.4.0",
     "peer-base": "peer-base/peer-base#temp-fix/delta-crdts-mvreg-fix",
-    "peer-id": "^0.13.2"
+    "peer-id": "^0.13.2",
+    "speedometer": "^1.1.0"
   }
 }

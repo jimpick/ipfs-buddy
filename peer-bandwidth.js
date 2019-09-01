@@ -58,7 +58,9 @@ async function run () {
     const live = {}
     for (const line of bitswapLines) {
       const [_, peerId] = line.split(' ')
-      const stats = await ipfs.stats.bw({ peer: peerId })
+      const stats = await ipfs.stats.bw({
+        peer: peerId
+      })
       // annotatedBitswapLines.push(`${peerId} ${JSON.stringify(stats)}`)
       const rateIn = stats.rateIn.toFixed(2)
       const rateOut = stats.rateOut.toFixed(2)
