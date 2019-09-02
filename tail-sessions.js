@@ -27,6 +27,7 @@ async function run () {
   }
 
   const sessions = {}
+  let errors = []
 
   async function render () {
     console.log('\u001b[2J\u001b[0;0H')
@@ -48,12 +49,19 @@ async function run () {
         firstKey
       )
       for (const peer of Object.keys(peers)) {
+        const duplicates = peers[peer].duplicateKeys.size
+        const received = peers[peer].receivedKeys.size - duplicates
         lines.push(
-          `  ${peer} Blocks: ${peers[peer].receivedKeys.size}`
+          `  ${peer} Blocks: ${received}` +
+          (duplicates ? ` + ${duplicates} duplicates` : '')
         )
       }
     }
-    lines.length = process.stdout.rows - 4
+    errors.length = 0
+    lines.length = Math.max(process.stdout.rows - 4 - errors.length, 10)
+    for (const line of errors) {
+      lines.push(line)
+    }
     console.log(lines.join('\n'))
   }
 
@@ -87,8 +95,9 @@ async function run () {
               }
             }
           } catch (e) {
-            console.error('Err', e.message)
             // Ignore
+            // console.error('Err', e.message)
+            errors.push('E1: ' + e.message)
           }
           if (!sessions[sessionUuid]) {
             sessions[sessionUuid] = {
@@ -101,26 +110,36 @@ async function run () {
             }
           }
           const session = sessions[sessionUuid]
-          session.keys.add(...keys)
+          for (const key of keys) {
+            session.keys.add(key)
+          }
           if (evt === 'receivefrom') {
             const { peer } = event
-            session.receivedKeys.add(...keys)
             if (!session.peers[peer]) {
               session.peers[peer] = {
-                receivedKeys: new Set()
+                receivedKeys: new Set(),
+                duplicateKeys: new Set()
               }
             }
             const sessionPeer = session.peers[peer]
-            sessionPeer.receivedKeys.add(...keys)
+            for (const key of keys) {
+              sessionPeer.receivedKeys.add(key)
+              if (session.receivedKeys.has(key)) {
+                sessionPeer.duplicateKeys.add(key)
+              }
+              session.receivedKeys.add(key)
+            }
           }
         }
       } catch (e) {
-        console.error('Err', e.message)
         // Ignore
+        // console.error('Err', e.message)
+        errors.push('E2: ' + e.message)
       }
     });
     res.on('end', () => {
       console.log('No more data in response.');
+      process.exit()
     });
   });
 
