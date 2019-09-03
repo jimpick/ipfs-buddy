@@ -10,6 +10,7 @@ const throttle = require('lodash.throttle')
 
 
 let cidDhtLookups = {}
+let savedChunk = ''
 
 async function run () {
   console.log('Starting...')
@@ -89,11 +90,11 @@ async function run () {
         for (const [key] of keyStarts) {
           const search = searches[key]
           if (search.started + 45000 < now) continue
-          const end = search.finished || Date.now()
+          const end = search.finished || done || Date.now()
           const dots = Math.floor(Math.min(end - search.started, 40000) / 1000)
           let report = ''
-          if (search.finished) {
-            const seconds = ((search.finished - search.started) / 1000).toFixed(1)
+          if (search.finished || done) {
+            const seconds = ((end - search.started) / 1000).toFixed(1)
             report = `${seconds}s`
             if (search.found.size > 0) {
               const peers = [...search.found]
@@ -134,13 +135,14 @@ async function run () {
         )
       }
     }
+    const displayErrors = errors.slice(-5)
     lines.length = Math.min(
       lines.length,
-      Math.max(process.stdout.rows - 4 - errors.length, 10)
+      Math.max(process.stdout.rows - 4 - displayErrors.length, 10)
     )
-    if (errors.length > 0) {
+    if (displayErrors.length > 0) {
       lines.push('')
-      for (const line of errors) {
+      for (const line of displayErrors) {
         lines.push(line)
       }
     }
@@ -153,7 +155,8 @@ async function run () {
 
   function processChunk (chunk) {
     try {
-      const event = JSON.parse(chunk)
+      const event = JSON.parse(savedChunk + chunk)
+      savedChunk = ''
       const { system } = event
       if (system === 'jimbssess') {
         // console.log(event)
@@ -284,7 +287,7 @@ async function run () {
             }
           } = event
           if (sessions[uuid]) {
-            sessions[uuid].done = true
+            sessions[uuid].done = Date.now()
           }
         }
       }
@@ -315,7 +318,11 @@ async function run () {
     } catch (e) {
       // Ignore
       // console.error('Err', e.message)
-      errors.push('E2: ' + e.message)
+      if (e.message === 'Unexpected end of JSON input') {
+        savedChunk += chunk
+      } else {
+        errors.push('E2: ' + e.message)
+      }
     }
   }
 
