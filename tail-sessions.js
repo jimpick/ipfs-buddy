@@ -11,6 +11,7 @@ const throttle = require('lodash.throttle')
 
 let cidDhtLookups = {}
 let savedChunk = ''
+let wantlistSize = 0
 
 async function run () {
   console.log('Starting...')
@@ -68,7 +69,14 @@ async function run () {
     const sortedWatchSessions = watchSessions.sort(([id1], [id2]) => id2 - id1)
     for (const [id, uuid] of sortedWatchSessions) {
       const session = sessions[uuid]
-      const { keys, firstKey, peers, done } = session
+      const {
+        keys,
+        firstKey,
+        peers,
+        done,
+        incomingAdvertisedCount,
+        incomingAdvertisedPeers
+      } = session
       const blockCount = session.keys.size
       const receivedBlockCount = session.receivedKeys.size
       lines.push(
@@ -76,6 +84,11 @@ async function run () {
         `Blocks: ${receivedBlockCount} of ${blockCount} ` +
         firstKey +
         (done ? ` -DONE-` : '')
+      )
+      lines.push(
+        `  Advertised wantlist ${incomingAdvertisedCount} times to ` +
+        `${incomingAdvertisedPeers.size} unique incoming peers ` +
+        `(current size ${wantlistSize})`
       )
       if (session.dhtSearches) {
         dhtLines = []
@@ -190,7 +203,9 @@ async function run () {
             receivedKeys: new Set(),
             peers: {},
             dhtSearches: {},
-            dhtSearchCount: 0
+            dhtSearchCount: 0,
+            incomingAdvertisedCount: 0,
+            incomingAdvertisedPeers: new Set()
           }
         }
         const session = sessions[sessionUuid]
@@ -288,6 +303,23 @@ async function run () {
           } = event
           if (sessions[uuid]) {
             sessions[uuid].done = Date.now()
+          }
+        }
+        if (evt === 'jimbspeermanconnectaddwants') {
+          const {
+            initialWantsLen,
+            peer
+          } = event
+          wantlistSize = initialWantsLen
+          if (initialWantsLen > 0) {
+            for (const uuid in sessions) {
+              const session = sessions[uuid]
+              if (session) {
+                if (session.done) continue
+                session.incomingAdvertisedCount += 1
+                session.incomingAdvertisedPeers.add(peer)
+              }
+            }
           }
         }
       }
