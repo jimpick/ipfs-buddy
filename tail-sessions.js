@@ -30,8 +30,34 @@ async function run () {
   const keysToSessions = {}
   let errors = []
 
+  setInterval(render, 1000)
+
+  while (true) {
+    await fetch()
+  }
+
+  function fetch () {
+    return new Promise(resolve => {
+      const req = http.request(options, handler)
+      req.on('error', (e) => {
+        console.error(`problem with request: ${e.message}`);
+      });
+      req.end()
+
+      function handler (res) {
+        // console.log(`STATUS: ${res.statusCode}`);
+        // console.log(`HEADERS: ${JSON.stringify(res.headers)}`);
+        res.setEncoding('utf8');
+        res.on('data', processChunk)
+        res.on('end', () => {
+          // console.log('No more data in response.');
+          resolve()
+        });
+      }
+    })
+  }
+
   async function render () {
-    console.log('\u001b[2J\u001b[0;0H')
     const lines = []
     const now = Date.now()
     const watchSessions = []
@@ -41,13 +67,14 @@ async function run () {
     const sortedWatchSessions = watchSessions.sort(([id1], [id2]) => id2 - id1)
     for (const [id, uuid] of sortedWatchSessions) {
       const session = sessions[uuid]
-      const { keys, firstKey, peers } = session
+      const { keys, firstKey, peers, done } = session
       const blockCount = session.keys.size
       const receivedBlockCount = session.receivedKeys.size
       lines.push(
         `Session: ${id} ${uuid} ` +
         `Blocks: ${receivedBlockCount} of ${blockCount} ` +
-        firstKey
+        firstKey +
+        (done ? ` -DONE-` : '')
       )
       if (session.dhtSearches) {
         dhtLines = []
@@ -59,7 +86,7 @@ async function run () {
             if (timeDiff !== 0) return timeDiff
             return key1.localeCompare(key2)
           })
-        for (const [key, time] of keyStarts) {
+        for (const [key] of keyStarts) {
           const search = searches[key]
           if (search.started + 45000 < now) continue
           const end = search.finished || Date.now()
@@ -68,9 +95,20 @@ async function run () {
           if (search.finished) {
             const seconds = ((search.finished - search.started) / 1000).toFixed(1)
             report = `${seconds}s`
+            if (search.found.size > 0) {
+              const peers = [...search.found]
+                .map(cid => cid.slice(-3))
+                .sort().slice(0, 5)
+              let foundPeers = peers.join(' ')
+              if (peers.length < search.found.size) {
+                foundPeers += '...'
+              }
+              
+              report += ` Found ${search.found.size} - ${foundPeers}`
+            }
           }
           dhtLines.push(
-            `  DHT: ${key} ${search.started} ${time}` + '.'.repeat(dots) + ' ' + report
+            `  DHT: ${key} ` + '.'.repeat(dots) + ' ' + report
           )
         }
         if (dhtLines.length > 15) dhtLines.length = 15
@@ -96,193 +134,191 @@ async function run () {
         )
       }
     }
-    errors.length = 0
-    lines.length = Math.max(process.stdout.rows - 4 - errors.length, 10)
-    for (const line of errors) {
-      lines.push(line)
+    lines.length = Math.min(
+      lines.length,
+      Math.max(process.stdout.rows - 4 - errors.length, 10)
+    )
+    if (errors.length > 0) {
+      lines.push('')
+      for (const line of errors) {
+        lines.push(line)
+      }
     }
+    if (lines.length === 0) {
+      lines.push('Waiting...')
+    }
+    console.log('\u001b[2J\u001b[0;0H')
     console.log(lines.join('\n'))
   }
 
-  setInterval(render, 1000)
-
-
-  const req = http.request(options, (res) => {
-    console.log(`STATUS: ${res.statusCode}`);
-    console.log(`HEADERS: ${JSON.stringify(res.headers)}`);
-    res.setEncoding('utf8');
-    res.on('data', (chunk) => {
-      try {
-        const event = JSON.parse(chunk)
-        const { system } = event
-        if (system === 'jimbssess') {
-          // console.log(event)
-          const {
-            event: evt,
-            sessionId,
-            sessionUuid: {
-              GetBlockRequest: sessionUuid
-            },
-            keys: keysJson
-          } = event
-          keys = []
-          try {
-            const parsedKeys = JSON.parse(keysJson)
-            for (const keyObj of parsedKeys) {
-              if (keyObj['/']) {
-                keys.push(keyObj['/'])
-              }
+  function processChunk (chunk) {
+    try {
+      const event = JSON.parse(chunk)
+      const { system } = event
+      if (system === 'jimbssess') {
+        // console.log(event)
+        const {
+          event: evt,
+          sessionId,
+          sessionUuid: {
+            GetBlockRequest: sessionUuid
+          },
+          keys: keysJson
+        } = event
+        keys = []
+        try {
+          const parsedKeys = JSON.parse(keysJson)
+          for (const keyObj of parsedKeys) {
+            if (keyObj['/']) {
+              keys.push(keyObj['/'])
             }
-          } catch (e) {
-            // Ignore
-            // console.error('Err', e.message)
-            errors.push('E1: ' + e.message)
           }
-          if (!sessions[sessionUuid]) {
-            sessions[sessionUuid] = {
-              id: sessionId,
-              added: Date.now(),
-              firstKey: keys[0],
-              keys: new Set(),
+        } catch (e) {
+          // Ignore
+          // console.error('Err', e.message)
+          errors.push('E1: ' + e.message)
+        }
+        if (!sessions[sessionUuid]) {
+          sessions[sessionUuid] = {
+            id: sessionId,
+            added: Date.now(),
+            firstKey: keys[0],
+            keys: new Set(),
+            receivedKeys: new Set(),
+            peers: {},
+            dhtSearches: {},
+            dhtSearchCount: 0
+          }
+        }
+        const session = sessions[sessionUuid]
+        for (const key of keys) {
+          session.keys.add(key)
+          if (!keysToSessions[key]) {
+            keysToSessions[key] = new Set()
+          }
+          keysToSessions[key].add(session)
+        }
+        if (evt === 'receivefrom') {
+          const { peer } = event
+          if (!session.peers[peer]) {
+            session.peers[peer] = {
               receivedKeys: new Set(),
-              peers: {}
+              duplicateKeys: new Set()
             }
           }
-          const session = sessions[sessionUuid]
+          const sessionPeer = session.peers[peer]
           for (const key of keys) {
-            session.keys.add(key)
-            if (!keysToSessions[key]) {
-              keysToSessions[key] = new Set()
+            sessionPeer.receivedKeys.add(key)
+            if (session.receivedKeys.has(key)) {
+              sessionPeer.duplicateKeys.add(key)
             }
-            keysToSessions[key].add(session)
-          }
-          if (evt === 'receivefrom') {
-            const { peer } = event
-            if (!session.peers[peer]) {
-              session.peers[peer] = {
-                receivedKeys: new Set(),
-                duplicateKeys: new Set()
-              }
-            }
-            const sessionPeer = session.peers[peer]
-            for (const key of keys) {
-              sessionPeer.receivedKeys.add(key)
-              if (session.receivedKeys.has(key)) {
-                sessionPeer.duplicateKeys.add(key)
-              }
-              session.receivedKeys.add(key)
-            }
+            session.receivedKeys.add(key)
           }
         }
-        if (system === 'bitswap') {
-          const { event: evt } = event
-          if (evt === 'jimprovfind') {
-            const {
-              key: {
-                "/": key
-              }
-            } = event
-            const sessions = keysToSessions[key]
-            if (sessions) {
-              const search = {
-                started: Date.now()
-              }
-              for (const session of sessions) {
-                if (!session.dhtSearches) {
-                  session.dhtSearches = {}
-                }
-                session.dhtSearches[key] = search
-              }
-            }
-          }
-          if (evt === 'jimprovfound') {
-            const {
-              key: {
-                "/": key
-              },
-              provider: peer
-            } = event
-            const sessions = keysToSessions[key]
-            if (sessions) {
-              for (const session of sessions) {
-                if (!session.peers[peer]) {
-                  session.peers[peer] = {
-                    receivedKeys: new Set(),
-                    duplicateKeys: new Set()
-                  }
-                }
-                session.peers[peer].dht = true
-                session.peers[peer].dhtError = false
-              }
-            }
-          }
-          if (evt === 'jimprovconnerror') {
-            const {
-              key: {
-                "/": key
-              },
-              provider: peer
-            } = event
-            const sessions = keysToSessions[key]
-            if (sessions) {
-              for (const session of sessions) {
-                if (session.peers[peer]) {
-                  session.peers[peer].dhtError = true
-                }
-              }
-            }
-          }
-        }
-        if (system === 'bitswap_network') {
-          const { event: evt } = event
-          if (evt === 'jimprovfinish') {
-            const {
-              key: {
-                "/": key
-              }
-            } = event
-            const sessions = keysToSessions[key]
-            if (sessions) {
-              for (const session of sessions) {
-                if (!session.dhtSearches) {
-                  session.dhtSearches = {}
-                }
-                if (session.dhtSearches[key]) {
-                  session.dhtSearches[key].finished = Date.now()
-                  break
-                }
-              }
-            }
-          }
-        }
-      } catch (e) {
-        // Ignore
-        // console.error('Err', e.message)
-        errors.push('E2: ' + e.message)
       }
-    });
-    res.on('end', () => {
-      console.log('No more data in response.');
-      process.exit()
-    });
-  });
-
-  req.on('error', (e) => {
-    console.error(`problem with request: ${e.message}`);
-  });
-
-  // Write data to request body
-  req.end()
-  /*
-  ipfs.log.tail((err, output) => {
-    if (err) {
-      console.error('Err:', err)
-      process.exit(1)
+      if (system === 'bitswap') {
+        const { event: evt } = event
+        if (evt === 'jimprovfind') {
+          const {
+            key: {
+              "/": key
+            }
+          } = event
+          const sessions = keysToSessions[key]
+          if (sessions) {
+            for (const session of sessions) {
+              if (session.done) continue
+              session.dhtSearches[key] = {
+                started: Date.now(),
+                found: new Set()
+              }
+            }
+          }
+        }
+        if (evt === 'jimprovfound') {
+          const {
+            key: {
+              "/": key
+            },
+            provider: peer
+          } = event
+          const sessions = keysToSessions[key]
+          if (sessions) {
+            for (const session of sessions) {
+              if (session.done) continue
+              if (!session.peers[peer]) {
+                session.peers[peer] = {
+                  receivedKeys: new Set(),
+                  duplicateKeys: new Set()
+                }
+              }
+              session.peers[peer].dht = true
+              session.peers[peer].dhtError = false
+              if (session.dhtSearches[key]) {
+                session.dhtSearches[key].found.add(peer)
+              }
+            }
+          }
+        }
+        if (evt === 'jimprovconnerror') {
+          const {
+            key: {
+              "/": key
+            },
+            provider: peer
+          } = event
+          const sessions = keysToSessions[key]
+          if (sessions) {
+            for (const session of sessions) {
+              if (session.done) continue
+              if (session.peers[peer]) {
+                session.peers[peer].dhtError = true
+              }
+            }
+          }
+        }
+        if (evt === 'jimbssessdone') {
+          const {
+            sessionUuid: {
+              "GetBlockRequest": uuid
+            }
+          } = event
+          if (sessions[uuid]) {
+            sessions[uuid].done = true
+          }
+        }
+      }
+      if (system === 'bitswap_network') {
+        const { event: evt } = event
+        if (evt === 'jimprovfinish') {
+          const {
+            key: {
+              "/": key
+            }
+          } = event
+          const sessions = keysToSessions[key]
+          if (sessions) {
+            for (const session of sessions) {
+              if (session.done) continue
+              if (!session.dhtSearches) {
+                session.dhtSearches = {
+                  found: new Set()
+                }
+              }
+              if (session.dhtSearches[key]) {
+                session.dhtSearches[key].finished = Date.now()
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore
+      // console.error('Err', e.message)
+      errors.push('E2: ' + e.message)
     }
-    console.log('Jim', output)
-    output.pipe(process.stdout)
-  })
-  */
+  }
+
 }
 
 run()
