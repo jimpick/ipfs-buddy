@@ -27,6 +27,7 @@ async function run () {
   }
 
   const sessions = {}
+  const keysToSessions = {}
   let errors = []
 
   async function render () {
@@ -48,12 +49,50 @@ async function run () {
         `Blocks: ${receivedBlockCount} of ${blockCount} ` +
         firstKey
       )
-      for (const peer of Object.keys(peers)) {
-        const duplicates = peers[peer].duplicateKeys.size
-        const received = peers[peer].receivedKeys.size - duplicates
-        lines.push(
-          `  ${peer} Blocks: ${received}` +
+      if (session.dhtSearches) {
+        dhtLines = []
+        const searches = session.dhtSearches
+        const keyStarts = Object.keys(searches)
+          .map(key => [key, searches[key].started])
+          .sort(([key1, started1], [key2, started2]) => {
+            const timeDiff = started2 - started1
+            if (timeDiff !== 0) return timeDiff
+            return key1.localeCompare(key2)
+          })
+        for (const [key, time] of keyStarts) {
+          const search = searches[key]
+          if (search.started + 45000 < now) continue
+          const end = search.finished || Date.now()
+          const dots = Math.floor(Math.min(end - search.started, 40000) / 1000)
+          let report = ''
+          if (search.finished) {
+            const seconds = ((search.finished - search.started) / 1000).toFixed(1)
+            report = `${seconds}s`
+          }
+          dhtLines.push(
+            `  DHT: ${key} ${search.started} ${time}` + '.'.repeat(dots) + ' ' + report
+          )
+        }
+        if (dhtLines.length > 15) dhtLines.length = 15
+        for (const line of dhtLines) {
+          lines.push(line)
+        }
+      }
+      for (const peerId of Object.keys(peers)) {
+        const peer = peers[peerId]
+        const duplicates = peer.duplicateKeys.size
+        const received = peer.receivedKeys.size - duplicates
+        let state = ''
+        if (received > 0 || !peer.dhtError) {
+          state = `Blocks: ${received}` +
           (duplicates ? ` + ${duplicates} duplicates` : '')
+        } else {
+          state = 'Connection error'
+        }
+        lines.push(
+          `    ${peerId} ` +
+          (peer.dht ? 'DHT ' : '--- ') +
+          state
         )
       }
     }
@@ -112,6 +151,10 @@ async function run () {
           const session = sessions[sessionUuid]
           for (const key of keys) {
             session.keys.add(key)
+            if (!keysToSessions[key]) {
+              keysToSessions[key] = new Set()
+            }
+            keysToSessions[key].add(session)
           }
           if (evt === 'receivefrom') {
             const { peer } = event
@@ -128,6 +171,87 @@ async function run () {
                 sessionPeer.duplicateKeys.add(key)
               }
               session.receivedKeys.add(key)
+            }
+          }
+        }
+        if (system === 'bitswap') {
+          const { event: evt } = event
+          if (evt === 'jimprovfind') {
+            const {
+              key: {
+                "/": key
+              }
+            } = event
+            const sessions = keysToSessions[key]
+            if (sessions) {
+              const search = {
+                started: Date.now()
+              }
+              for (const session of sessions) {
+                if (!session.dhtSearches) {
+                  session.dhtSearches = {}
+                }
+                session.dhtSearches[key] = search
+              }
+            }
+          }
+          if (evt === 'jimprovfound') {
+            const {
+              key: {
+                "/": key
+              },
+              provider: peer
+            } = event
+            const sessions = keysToSessions[key]
+            if (sessions) {
+              for (const session of sessions) {
+                if (!session.peers[peer]) {
+                  session.peers[peer] = {
+                    receivedKeys: new Set(),
+                    duplicateKeys: new Set()
+                  }
+                }
+                session.peers[peer].dht = true
+                session.peers[peer].dhtError = false
+              }
+            }
+          }
+          if (evt === 'jimprovconnerror') {
+            const {
+              key: {
+                "/": key
+              },
+              provider: peer
+            } = event
+            const sessions = keysToSessions[key]
+            if (sessions) {
+              for (const session of sessions) {
+                if (session.peers[peer]) {
+                  session.peers[peer].dhtError = true
+                }
+              }
+            }
+          }
+        }
+        if (system === 'bitswap_network') {
+          const { event: evt } = event
+          if (evt === 'jimprovfinish') {
+            const {
+              key: {
+                "/": key
+              }
+            } = event
+            const sessions = keysToSessions[key]
+            if (sessions) {
+              for (const session of sessions) {
+                if (!session.dhtSearches) {
+                  session.dhtSearches = {}
+                }
+                if (session.dhtSearches[key]) {
+                  session.dhtSearches[key].finished = Date.now()
+                  break
+                }
+              }
             }
           }
         }
